@@ -278,7 +278,9 @@ public class HLSSampleSource implements SampleSource {
 
     isLive = !variantPlaylist.endList;
     if (isLive) {
-      if (variantPlaylist.type == VariantPlaylist.TYPE_EVENT) {
+      // If type is UNKNOWN, assume it is TYPE_EVENT. This enables all segments in the playlist 
+      // to be seekable.
+      if (variantPlaylist.type == VariantPlaylist.TYPE_EVENT || variantPlaylist.type == VariantPlaylist.TYPE_UNKNOWN) {
         // the server will only append files, start from the beginning
         firstRememberedMediaSequence = variantPlaylist.mediaSequence;
       } else {
