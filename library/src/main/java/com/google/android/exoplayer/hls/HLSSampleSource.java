@@ -281,7 +281,11 @@ public class HLSSampleSource implements SampleSource {
     }
 
     // compute durationSec
-    currentEntry = evaluateNextEntry();
+    if (mainPlaylist.firstEntry != null) {
+      currentEntry = mainPlaylist.firstEntry;
+    } else {
+      currentEntry = evaluateNextEntry();
+    }
     VariantPlaylist variantPlaylist = currentEntry.downloadVariantPlaylist();
     variantPlaylistsMap.get(currentEntry).playlist = variantPlaylist;
 
@@ -438,7 +442,11 @@ public class HLSSampleSource implements SampleSource {
     estimatedBps = (int)bandwidthMeter.getEstimate() * 8;
     bufferMsec = (int)((getBufferedPositionUs() - playbackPositionUs)/1000);
 
-    currentEntry = evaluateNextEntry();
+    if (estimatedBps < 0 && mainPlaylist.firstEntry != null) {
+      currentEntry = mainPlaylist.firstEntry;
+    } else {
+      currentEntry = evaluateNextEntry();
+    }
     VariantPlaylist variantPlaylist = variantPlaylistsMap.get(currentEntry).playlist;
     if (variantPlaylist == null) {
       kickVariantPlaylistTask();

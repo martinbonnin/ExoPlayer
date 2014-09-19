@@ -69,6 +69,7 @@ public class MainPlaylist {
   }
 
   public List<Entry> entries;
+  public Entry firstEntry;
   public String url;
 
   public MainPlaylist() {
@@ -107,6 +108,14 @@ public class MainPlaylist {
             if (codecCount[i] < max) {
                 Log.d(TAG, "removing playlist " + entry.url);
                 it.remove();
+
+                if (entry == firstEntry) {
+                  // We've determined the first entry was incomplete, so we need to forget about it.
+                  // At this stage, we do not know enough to determine the actual first complete
+                  // quality, so the most we can do is just set it to null and expect the caller
+                  // to know how to deal with that.
+                  firstEntry = null;
+                }
             }
             i++;
         }
@@ -175,6 +184,8 @@ public class MainPlaylist {
         e = null;
       }
     }
+
+    mainPlaylist.firstEntry = mainPlaylist.entries.size() > 0 ? mainPlaylist.entries.get(0) : null;
 
     Collections.sort(mainPlaylist.entries);
     stream.close();
