@@ -15,9 +15,10 @@
  */
 package com.google.android.exoplayer.upstream;
 
-import com.google.android.exoplayer.util.Assertions;
-
 import android.net.Uri;
+
+import com.google.android.exoplayer.C;
+import com.google.android.exoplayer.util.Assertions;
 
 /**
  * Defines a region of media data.
@@ -30,7 +31,6 @@ public final class DataSpec {
    * data whose location is defined by its {@link #uri}.
    */
   public static final int LENGTH_UNBOUNDED = -1;
-
   /**
    * Identifies the source from which data should be read.
    */
@@ -50,7 +50,7 @@ public final class DataSpec {
    */
   public final long position;
   /**
-   * The length of the data. Greater than zero, or equal to {@link #LENGTH_UNBOUNDED}.
+   * The length of the data. Greater than zero, or equal to {@link C#LENGTH_UNBOUNDED}.
    */
   public final long length;
   /**
@@ -98,7 +98,7 @@ public final class DataSpec {
       boolean uriIsFullStream) {
     Assertions.checkArgument(absoluteStreamPosition >= 0);
     Assertions.checkArgument(position >= 0);
-    Assertions.checkArgument(length > 0 || length == LENGTH_UNBOUNDED);
+    Assertions.checkArgument(length > 0 || length == C.LENGTH_UNBOUNDED);
     Assertions.checkArgument(absoluteStreamPosition == position || !uriIsFullStream);
     this.uri = uri;
     this.uriIsFullStream = uriIsFullStream;

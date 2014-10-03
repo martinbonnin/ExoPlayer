@@ -15,12 +15,13 @@
  */
 package com.google.android.exoplayer.upstream;
 
+import android.text.TextUtils;
+import android.util.Log;
+
+import com.google.android.exoplayer.C;
 import com.google.android.exoplayer.util.Assertions;
 import com.google.android.exoplayer.util.Predicate;
 import com.google.android.exoplayer.util.Util;
-
-import android.text.TextUtils;
-import android.util.Log;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -258,16 +259,9 @@ public class HttpDataSource implements DataSource {
     }
 
     long contentLength = getContentLength(connection);
-    dataLength = dataSpec.length == DataSpec.LENGTH_UNBOUNDED ? contentLength : dataSpec.length;
-    if (dataLength == DataSpec.LENGTH_UNBOUNDED) {
-      // The DataSpec specified unbounded length and we failed to resolve a length from the
-      // response headers.
-      //throw new HttpDataSourceException(
-      //    new UnexpectedLengthException(DataSpec.LENGTH_UNBOUNDED, DataSpec.LENGTH_UNBOUNDED),
-      //    dataSpec);
-    }
+    dataLength = dataSpec.length == C.LENGTH_UNBOUNDED ? contentLength : dataSpec.length;
 
-    if (dataSpec.length != DataSpec.LENGTH_UNBOUNDED && contentLength != DataSpec.LENGTH_UNBOUNDED
+    if (dataSpec.length != C.LENGTH_UNBOUNDED && contentLength != C.LENGTH_UNBOUNDED
         && contentLength != dataSpec.length) {
       // The DataSpec specified a length and we resolved a length from the response headers, but
       // the two lengths do not match.
@@ -305,9 +299,9 @@ public class HttpDataSource implements DataSource {
       if (listener != null) {
         listener.onBytesTransferred(read);
       }
-    } else if (dataLength != DataSpec.LENGTH_UNBOUNDED && dataLength != bytesRead) {
+    } else if (dataLength != C.LENGTH_UNBOUNDED && dataLength != bytesRead) {
       // Check for cases where the server closed the connection having not sent the correct amount
-      // of data.
+      // of data. We can only do this if we know the length of the data we were expecting.
       throw new HttpDataSourceException(new UnexpectedLengthException(dataLength, bytesRead),
           dataSpec);
     }
@@ -363,6 +357,18 @@ public class HttpDataSource implements DataSource {
     return bytesRead;
   }
 
+  /**
+   * Returns the number of bytes that are still to be read for the current {@link DataSpec}.
+   * <p>
+   * If the total length of the data being read is known, then this length minus {@code bytesRead()}
+   * is returned. If the total length is unknown, {@link C#LENGTH_UNBOUNDED} is returned.
+   *
+   * @return The remaining length, or {@link C#LENGTH_UNBOUNDED}.
+   */
+  protected final long bytesRemaining() {
+    return dataLength == C.LENGTH_UNBOUNDED ? dataLength : dataLength - bytesRead;
+  }
+
   private HttpURLConnection makeConnection(DataSpec dataSpec) throws IOException {
     URL url = new URL(dataSpec.uri.toString());
     HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -383,14 +389,14 @@ public class HttpDataSource implements DataSource {
 
   private String buildRangeHeader(DataSpec dataSpec) {
     String rangeRequest = "bytes=" + dataSpec.position + "-";
-    if (dataSpec.length != DataSpec.LENGTH_UNBOUNDED) {
+    if (dataSpec.length != C.LENGTH_UNBOUNDED) {
       rangeRequest += (dataSpec.position + dataSpec.length - 1);
     }
     return rangeRequest;
   }
 
   private long getContentLength(HttpURLConnection connection) {
-    long contentLength = DataSpec.LENGTH_UNBOUNDED;
+    long contentLength = C.LENGTH_UNBOUNDED;
     String contentLengthHeader = connection.getHeaderField("Content-Length");
     if (!TextUtils.isEmpty(contentLengthHeader)) {
       try {
@@ -423,10 +429,6 @@ public class HttpDataSource implements DataSource {
           Log.e(TAG, "Unexpected Content-Range [" + contentRangeHeader + "]");
         }
       }
-    }
-    if (contentLength == DataSpec.LENGTH_UNBOUNDED) {
-      Log.w(TAG, "Unable to parse content length [" + contentLengthHeader + "] [" +
-          contentRangeHeader + "]");
     }
     return contentLength;
   }

@@ -15,6 +15,11 @@
  */
 package com.google.android.exoplayer.demo.full.player;
 
+import android.media.MediaCodec.CryptoException;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Surface;
+
 import com.google.android.exoplayer.DummyTrackRenderer;
 import com.google.android.exoplayer.ExoPlaybackException;
 import com.google.android.exoplayer.ExoPlayer;
@@ -29,11 +34,6 @@ import com.google.android.exoplayer.drm.StreamingDrmSessionManager;
 import com.google.android.exoplayer.text.TextTrackRenderer;
 import com.google.android.exoplayer.upstream.DefaultBandwidthMeter;
 import com.google.android.exoplayer.util.PlayerControl;
-
-import android.media.MediaCodec.CryptoException;
-import android.os.Handler;
-import android.os.Looper;
-import android.view.Surface;
 
 import java.io.IOException;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -121,10 +121,10 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
     void onVideoFormatEnabled(String formatId, int trigger, int mediaTimeMs);
     void onAudioFormatEnabled(String formatId, int trigger, int mediaTimeMs);
     void onDroppedFrames(int count, long elapsed);
-    void onBandwidthSample(int elapsedMs, long bytes, long bandwidthEstimate);
+    void onBandwidthSample(int elapsedMs, long bytes, long bitrateEstimate);
     void onLoadStarted(int sourceId, String formatId, int trigger, boolean isInitialization,
-        int mediaStartTimeMs, int mediaEndTimeMs);
-    void onLoadCompleted(int sourceId);
+        int mediaStartTimeMs, int mediaEndTimeMs, long length);
+    void onLoadCompleted(int sourceId, long bytesLoaded);
   }
 
   /**
@@ -391,9 +391,9 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
   }
 
   @Override
-  public void onBandwidthSample(int elapsedMs, long bytes, long bandwidthEstimate) {
+  public void onBandwidthSample(int elapsedMs, long bytes, long bitrateEstimate) {
     if (infoListener != null) {
-      infoListener.onBandwidthSample(elapsedMs, bytes, bandwidthEstimate);
+      infoListener.onBandwidthSample(elapsedMs, bytes, bitrateEstimate);
     }
   }
 
@@ -471,34 +471,34 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
 
   @Override
   public void onLoadStarted(int sourceId, String formatId, int trigger, boolean isInitialization,
-      int mediaStartTimeMs, int mediaEndTimeMs) {
+      int mediaStartTimeMs, int mediaEndTimeMs, long length) {
     if (infoListener != null) {
       infoListener.onLoadStarted(sourceId, formatId, trigger, isInitialization, mediaStartTimeMs,
-          mediaEndTimeMs);
+          mediaEndTimeMs, length);
     }
   }
 
   @Override
-  public void onLoadCompleted(int sourceId) {
+  public void onLoadCompleted(int sourceId, long bytesLoaded) {
     if (infoListener != null) {
-      infoListener.onLoadCompleted(sourceId);
+      infoListener.onLoadCompleted(sourceId, bytesLoaded);
     }
   }
 
   @Override
-  public void onLoadCanceled(int sourceId) {
+  public void onLoadCanceled(int sourceId, long bytesLoaded) {
     // Do nothing.
   }
 
   @Override
   public void onUpstreamDiscarded(int sourceId, int mediaStartTimeMs, int mediaEndTimeMs,
-      long totalBytes) {
+      long bytesDiscarded) {
     // Do nothing.
   }
 
   @Override
   public void onDownstreamDiscarded(int sourceId, int mediaStartTimeMs, int mediaEndTimeMs,
-      long totalBytes) {
+      long bytesDiscarded) {
     // Do nothing.
   }
 

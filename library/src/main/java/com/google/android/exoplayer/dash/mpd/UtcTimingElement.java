@@ -13,23 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.google.android.exoplayer.upstream;
+package com.google.android.exoplayer.dash.mpd;
 
 /**
- * Provides estimates of the currently available bandwidth.
+ * Represents a UTCTiming element.
  */
-public interface BandwidthMeter {
+public class UtcTimingElement {
 
-  /**
-   * Indicates no bandwidth estimate is available.
-   */
-  final long NO_ESTIMATE = -1;
+  public final String schemeIdUri;
+  public final String value;
 
-  /**
-   * Gets the estimated bandwidth, in bits/sec.
-   *
-   * @return Estimated bandwidth in bits/sec, or {@link #NO_ESTIMATE} if no estimate is available.
-   */
-  long getBitrateEstimate();
+  public UtcTimingElement(String schemeIdUri, String value) {
+    this.schemeIdUri = schemeIdUri;
+    this.value = value;
+  }
 
 }

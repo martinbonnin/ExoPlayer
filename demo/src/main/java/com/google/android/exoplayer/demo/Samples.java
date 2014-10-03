@@ -169,6 +169,8 @@ package com.google.android.exoplayer.demo;
         DemoUtil.TYPE_OTHER, false, true),
     new Sample("Tour de france - mp4 720p", "uid:misc:dailmotion-mp4720p", "http://www.dailymotion.com/cdn/H264-1280x720/video/x20w6of.mp4?auth=1410854598-2560-z6kb2tel-c8430f2843d7230c9e6622ba1920c77d",
         DemoUtil.TYPE_OTHER, false, true),
+    new Sample("Dizzy (https->http redirect)", "uid:misc:dizzy2", "https://goo.gl/MtUDEj",
+        DemoUtil.TYPE_OTHER, false, true),
   };
 
   private Samples() {}

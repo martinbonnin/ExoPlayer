@@ -15,17 +15,16 @@
  */
 package com.google.android.exoplayer;
 
-import com.google.android.exoplayer.drm.DrmSessionManager;
-import com.google.android.exoplayer.util.MimeTypes;
-import com.google.android.exoplayer.util.TraceUtil;
-
 import android.annotation.TargetApi;
 import android.media.MediaCodec;
 import android.media.MediaCrypto;
 import android.os.Handler;
 import android.os.SystemClock;
-import android.util.Log;
 import android.view.Surface;
+
+import com.google.android.exoplayer.drm.DrmSessionManager;
+import com.google.android.exoplayer.util.MimeTypes;
+import com.google.android.exoplayer.util.TraceUtil;
 
 import java.nio.ByteBuffer;
 
@@ -228,16 +227,16 @@ public class MediaCodecVideoTrackRenderer extends MediaCodecTrackRenderer {
   }
 
   @Override
-  protected long seekTo(long timeUs) throws ExoPlaybackException {
-    long seekTimeUs = super.seekTo(timeUs);
+  protected void seekTo(long timeUs) throws ExoPlaybackException {
+    super.seekTo(timeUs);
     renderedFirstFrame = false;
     joiningDeadlineUs = -1;
-    return seekTimeUs;
   }
 
   @Override
   protected boolean isReady() {
-    if (super.isReady() && (renderedFirstFrame || !codecInitialized())) {
+    if (super.isReady() && (renderedFirstFrame || !codecInitialized()
+        || getSourceState() == SOURCE_STATE_READY_READ_MAY_FAIL)) {
       // Ready. If we were joining then we've now joined, so clear the joining deadline.
       joiningDeadlineUs = -1;
       return true;

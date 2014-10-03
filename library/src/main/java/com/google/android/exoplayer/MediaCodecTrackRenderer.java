@@ -15,11 +15,6 @@
  */
 package com.google.android.exoplayer;
 
-import com.google.android.exoplayer.drm.DrmSessionManager;
-import com.google.android.exoplayer.util.Assertions;
-import com.google.android.exoplayer.util.TraceUtil;
-import com.google.android.exoplayer.util.Util;
-
 import android.annotation.TargetApi;
 import android.media.MediaCodec;
 import android.media.MediaCodec.CryptoException;
@@ -27,12 +22,13 @@ import android.media.MediaCrypto;
 import android.media.MediaExtractor;
 import android.os.Handler;
 import android.os.SystemClock;
-import android.util.Log;
+
+import com.google.android.exoplayer.drm.DrmSessionManager;
+import com.google.android.exoplayer.util.Assertions;
+import com.google.android.exoplayer.util.Util;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
@@ -86,6 +82,22 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
   }
 
   /**
+   * Value of {@link #sourceState} when the source is not ready.
+   */
+  protected static final int SOURCE_STATE_NOT_READY = 0;
+  /**
+   * Value of {@link #sourceState} when the source is ready and we're able to read from it.
+   */
+  protected static final int SOURCE_STATE_READY = 1;
+  /**
+   * Value of {@link #sourceState} when the source is ready but we might not be able to read from
+   * it. We transition to this state when an attempt to read a sample fails despite the source
+   * reporting that samples are available. This can occur when the next sample to be provided by
+   * the source is for another renderer.
+   */
+  protected static final int SOURCE_STATE_READY_READ_MAY_FAIL = 2;
+
+  /**
    * If the {@link MediaCodec} is hotswapped (i.e. replaced during playback), this is the period of
    * time during which {@link #isReady()} will report true regardless of whether the new codec has
    * output frames that are ready to be rendered.
@@ -122,7 +134,7 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
   private final boolean playClearSamplesWithoutKeys;
   private final SampleSource source;
   private final SampleHolder sampleHolder;
-  private final FormatHolder formatHolder;
+  private final MediaFormatHolder formatHolder;
   private final HashSet<Long> decodeOnlyPresentationTimestamps;
   private final MediaCodec.BufferInfo outputBufferInfo;
   private final EventListener eventListener;
@@ -143,6 +155,7 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
   private int codecReinitState;
 
   private int trackIndex;
+  private int sourceState;
   private boolean inputStreamEnded;
   private boolean outputStreamEnded;
   private boolean waitingForKeys;
@@ -172,7 +185,7 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
     this.eventListener = eventListener;
     codecCounters = new CodecCounters();
     sampleHolder = new SampleHolder(false);
-    formatHolder = new FormatHolder();
+    formatHolder = new MediaFormatHolder();
     decodeOnlyPresentationTimestamps = new HashSet<Long>();
     outputBufferInfo = new MediaCodec.BufferInfo();
   }
@@ -201,7 +214,12 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
     return TrackRenderer.STATE_IGNORE;
   }
 
-  @SuppressWarnings("unused")
+  /**
+   * Determines whether a mime type is handled by the renderer.
+   *
+   * @param mimeType The mime type to test.
+   * @return True if the renderer can handle the mime type. False otherwise.
+   */
   protected boolean handlesMimeType(String mimeType) {
     return true;
     // TODO: Uncomment once the TODO above is fixed.
@@ -211,6 +229,7 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
   @Override
   protected void onEnabled(long timeUs, boolean joining) {
     source.enable(trackIndex, timeUs);
+    sourceState = SOURCE_STATE_NOT_READY;
     inputStreamEnded = false;
     outputStreamEnded = false;
     waitingForKeys = false;
@@ -278,7 +297,6 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
         SystemClock.elapsedRealtime() : -1;
     inputIndex = -1;
     outputIndex = -1;
-    hasQueuedOneInputBuffer = false;
     waitingForFirstSyncFrame = true;
     codecCounters.codecInitCount++;
   }
@@ -297,14 +315,20 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
 
   @Override
   protected void onDisabled() {
-    releaseCodec();
     format = null;
     drmInitData = null;
-    if (openedDrmSession) {
-      drmSessionManager.close();
-      openedDrmSession = false;
+    try {
+      releaseCodec();
+    } finally {
+      try {
+        if (openedDrmSession) {
+          drmSessionManager.close();
+          openedDrmSession = false;
+        }
+      } finally {
+        source.disable(trackIndex);
+      }
     }
-    source.disable(trackIndex);
   }
 
   protected void releaseCodec() {
@@ -349,20 +373,18 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
   @Override
   protected long getBufferedPositionUs() {
     long sourceBufferedPosition = source.getBufferedPositionUs();
-    return sourceBufferedPosition == UNKNOWN_TIME || sourceBufferedPosition == END_OF_TRACK
+    return sourceBufferedPosition == UNKNOWN_TIME_US || sourceBufferedPosition == END_OF_TRACK_US
         ? sourceBufferedPosition : Math.max(sourceBufferedPosition, getCurrentPositionUs());
   }
 
   @Override
-  protected long seekTo(long timeUs) throws ExoPlaybackException {
-    long seekTimeUs;
-    seekTimeUs = source.seekToUs(timeUs);
-    currentPositionUs = seekTimeUs;
+  protected void seekTo(long timeUs) throws ExoPlaybackException {
+    currentPositionUs = timeUs;
+    source.seekToUs(timeUs);
+    sourceState = SOURCE_STATE_NOT_READY;
     inputStreamEnded = false;
     outputStreamEnded = false;
     waitingForKeys = false;
-
-    return seekTimeUs;
   }
 
   @Override
@@ -378,7 +400,9 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
   @Override
   protected void doSomeWork(long timeUs) throws ExoPlaybackException {
     try {
-      source.continueBuffering(timeUs);
+      sourceState = source.continueBuffering(timeUs)
+          ? (sourceState == SOURCE_STATE_NOT_READY ? SOURCE_STATE_READY : sourceState)
+          : SOURCE_STATE_NOT_READY;
       checkForDiscontinuity();
       if (format == null) {
         readFormat();
@@ -390,9 +414,12 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
         }
         if (codec != null) {
           while (drainOutputBuffer(timeUs)) {}
-          while (feedInputBuffer()) {}
+          if (feedInputBuffer(true)) {
+            while (feedInputBuffer(false)) {}
+          }
         }
       }
+      codecCounters.ensureUpdated();
     } catch (IOException e) {
       throw new ExoPlaybackException(e);
     }
@@ -414,7 +441,6 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
         if (!sampleHolder.decodeOnly) {
           currentPositionUs = sampleHolder.timeUs;
         }
-        codecCounters.discardedSamplesCount++;
       } else if (result == SampleSource.FORMAT_READ) {
         onInputFormatChanged(formatHolder);
       }
@@ -435,6 +461,7 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
     codecHotswapTimeMs = -1;
     inputIndex = -1;
     outputIndex = -1;
+    waitingForFirstSyncFrame = true;
     decodeOnlyPresentationTimestamps.clear();
     // Workaround for framework bugs.
     // See [redacted], [redacted], [redacted].
@@ -465,42 +492,17 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
   }
 
   /**
+   * @param firstFeed True if this is the first call to this method from the current invocation of
+   *     {@link #doSomeWork(long)}. False otherwise.
    * @return True if it may be possible to feed more input data. False otherwise.
    * @throws IOException If an error occurs reading data from the upstream source.
    * @throws ExoPlaybackException If an error occurs feeding the input buffer.
    */
-  private boolean feedInputBuffer() throws IOException, ExoPlaybackException {
+  private boolean feedInputBuffer(boolean firstFeed) throws IOException, ExoPlaybackException {
     if (inputStreamEnded) {
       return false;
     }
 
-  if (codecReinitState == REINIT_STATE_4 || (codecReinitState == REINIT_STATE_1 && !hasQueuedOneInputBuffer)) {
-      releaseCodec();
-      maybeInitCodec();
-      codecReinitState = REINIT_STATE_0;
-      return false;
-  }
-
-    if (inputIndex < 0) {
-      inputIndex = codec.dequeueInputBuffer(0);
-      if (inputIndex < 0) {
-        return false;
-      }
-      sampleHolder.data = inputBuffers[inputIndex];
-      sampleHolder.data.clear();
-    }
-
-    if (codecReinitState == REINIT_STATE_1 && hasQueuedOneInputBuffer) {
-        codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-        inputIndex = -1;
-        codecCounters.queuedEndOfStreamCount++;
-        codecReinitState = REINIT_STATE_2;
-        return false;
-    }
-
-    if (codecReinitState != REINIT_STATE_0) {
-        return false;
-    }
     int result;
     if (waitingForKeys) {
       // We've already read an encrypted sample into sampleHolder, and are waiting for keys.
@@ -516,10 +518,12 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
         codecReconfigurationState = RECONFIGURATION_STATE_QUEUE_PENDING;
       }
       result = source.readData(trackIndex, currentPositionUs, formatHolder, sampleHolder, false);
+      if (firstFeed && sourceState == SOURCE_STATE_READY && result == SampleSource.NOTHING_READ) {
+        sourceState = SOURCE_STATE_READY_READ_MAY_FAIL;
+      }
     }
 
     if (result == SampleSource.NOTHING_READ) {
-      codecCounters.inputBufferWaitingForSampleCount++;
       return false;
     }
     if (result == SampleSource.DISCONTINUITY_READ) {
@@ -548,7 +552,6 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
       try {
         codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
         inputIndex = -1;
-        codecCounters.queuedEndOfStreamCount++;
       } catch (CryptoException e) {
         notifyCryptoError(e);
         throw new ExoPlaybackException(e);
@@ -607,11 +610,6 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
       } else {
         codec.queueInputBuffer(inputIndex, 0 , bufferSize, presentationTimeUs, 0);
       }
-      codecCounters.queuedInputBufferCount++;
-      hasQueuedOneInputBuffer = true;
-      if ((sampleHolder.flags & MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
-        codecCounters.keyframeCount++;
-      }
       inputIndex = -1;
       codecReconfigurationState = RECONFIGURATION_STATE_NONE;
     } catch (CryptoException e) {
@@ -658,7 +656,7 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
    * @param formatHolder Holds the new format.
    * @throws ExoPlaybackException If an error occurs reinitializing the {@link MediaCodec}.
    */
-  private void onInputFormatChanged(FormatHolder formatHolder) throws ExoPlaybackException {
+  private void onInputFormatChanged(MediaFormatHolder formatHolder) throws ExoPlaybackException {
     MediaFormat oldFormat = format;
     format = formatHolder.format;
     drmInitData = formatHolder.drmInitData;
@@ -696,7 +694,6 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
    * @param newFormat The new format.
    * @return True if the existing instance can be reconfigured. False otherwise.
    */
-  @SuppressWarnings("unused")
   protected boolean canReconfigureCodec(MediaCodec codec, boolean codecIsAdaptive,
       MediaFormat oldFormat, MediaFormat newFormat) {
     return false;
@@ -710,10 +707,17 @@ public abstract class MediaCodecTrackRenderer extends TrackRenderer {
   @Override
   protected boolean isReady() {
     return format != null && !waitingForKeys
-        && ((codec == null && !shouldInitCodec()) // We don't want the codec
-            || outputIndex >= 0 // Or we have an output buffer ready to release
-            || inputIndex < 0 // Or we don't have any input buffers to write to
-            || isWithinHotswapPeriod()); // Or the codec is being hotswapped
+        && sourceState != SOURCE_STATE_NOT_READY || outputIndex >= 0 || isWithinHotswapPeriod();
+  }
+
+  /**
+   * Gets the source state.
+   *
+   * @return One of {@link #SOURCE_STATE_NOT_READY}, {@link #SOURCE_STATE_READY} and
+   *     {@link #SOURCE_STATE_READY_READ_MAY_FAIL}.
+   */
+  protected final int getSourceState() {
+    return sourceState;
   }
 
   private boolean isWithinHotswapPeriod() {

@@ -7,15 +7,16 @@ import android.os.Handler;
 import android.os.SystemClock;
 import android.util.Log;
 
-import com.google.android.exoplayer.FormatHolder;
 import com.google.android.exoplayer.MediaCodecUtil;
 import com.google.android.exoplayer.MediaFormat;
+import com.google.android.exoplayer.MediaFormatHolder;
 import com.google.android.exoplayer.ParserException;
 import com.google.android.exoplayer.SampleHolder;
 import com.google.android.exoplayer.SampleSource;
 import com.google.android.exoplayer.TrackInfo;
 import com.google.android.exoplayer.parser.aac.AACExtractor;
 import com.google.android.exoplayer.parser.h264.H264Utils;
+import com.google.android.exoplayer.parser.h264.H264Utils.SPS;
 import com.google.android.exoplayer.parser.ts.TSExtractorWithParsers;
 import com.google.android.exoplayer.upstream.AESDataSource;
 import com.google.android.exoplayer.upstream.DataSource;
@@ -35,7 +36,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicLong;
-import com.google.android.exoplayer.parser.h264.H264Utils.SPS;
 
 /**
  * Created by martin on 31/07/14.
@@ -428,18 +428,18 @@ public class HLSSampleSource implements SampleSource {
   }
 
   @Override
-  public void continueBuffering(long playbackPositionUs) {
+  public boolean continueBuffering(long playbackPositionUs) {
     if (chunkTask != null) {
       // we are already loading something
-      return;
+        return false;
     }
 
     if (bufferSize >= maxBufferSize) {
       // we don't want to waste too much memory
-      return;
+        return false;
     }
 
-    estimatedBps = (int)bandwidthMeter.getEstimate() * 8;
+    estimatedBps = (int)bandwidthMeter.getBitrateEstimate() * 8;
     bufferMsec = (int)((getBufferedPositionUs() - playbackPositionUs)/1000);
 
     if (estimatedBps < 0 && mainPlaylist.firstEntry != null) {
@@ -451,16 +451,16 @@ public class HLSSampleSource implements SampleSource {
     if (variantPlaylist == null) {
       kickVariantPlaylistTask();
       // wait for the task to complete
-      return;
+        return false;
     }
 
     if (sequence >= variantPlaylist.mediaSequence + variantPlaylist.entries.size()) {
       if (variantPlaylist.endList) {
         endOfStream = true;
-        return;
+          return false;
       } else {
         kickVariantPlaylistTask();
-        return;
+          return false;
       }
     } else if (sequence < variantPlaylist.mediaSequence) {
       int newSequence = variantPlaylist.mediaSequence + 1;
@@ -491,6 +491,7 @@ public class HLSSampleSource implements SampleSource {
                     currentEntry.width, currentEntry.height, null);
     chunkTask = new ChunkTask(chunk);
     chunkTask.execute();
+    return true;
   }
 
   private void kickVariantPlaylistTask() {
@@ -504,7 +505,7 @@ public class HLSSampleSource implements SampleSource {
   }
 
   @Override
-  public int readData(int track, long playbackPositionUs, FormatHolder formatHolder, SampleHolder sampleHolder, boolean onlyReadDiscontinuity) throws IOException {
+  public int readData(int track, long playbackPositionUs, MediaFormatHolder formatHolder, SampleHolder sampleHolder, boolean onlyReadDiscontinuity) throws IOException {
     if (onlyReadDiscontinuity) {
       if (trackList.get(track).discontinuity) {
         trackList.get(track).discontinuity = false;
