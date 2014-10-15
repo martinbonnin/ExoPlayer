@@ -152,9 +152,14 @@ public class MainPlaylist {
         }
     }
 
-    public static MainPlaylist createFakeMainPlaylist(String url) {
+    /**
+     * Creates a MainPlaylist with <em>streamVariantUrl</em> as a variant stream entry
+     * @param streamVariantUrl -
+     * @return -
+     */
+    public static MainPlaylist createFakeMainPlaylist(String streamVariantUrl) {
     MainPlaylist mainPlaylist = new MainPlaylist();
-    Entry e = new Entry(null, url);
+    Entry e = new Entry(null, streamVariantUrl);
     e.bps = 424242;
     /*e.codecs.add("mp4a");
     if (!audioOnly) {

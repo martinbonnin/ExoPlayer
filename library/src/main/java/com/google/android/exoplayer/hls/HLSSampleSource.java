@@ -256,7 +256,7 @@ public class HLSSampleSource implements SampleSource {
 
     }
     if (mainPlaylist == null || mainPlaylist.entries.size() == 0) {
-      // no main playlist: we fake one
+      Log.d(TAG, String.format("Assuming variant playlist for %s", this.url));
       mainPlaylist = MainPlaylist.createFakeMainPlaylist(this.url);
     }
 
@@ -379,9 +379,10 @@ public class HLSSampleSource implements SampleSource {
         break;
       }
       try {
+        // Make this handlerThread wait a bit before checking again if sample pts is ready
         Thread.sleep(100);
       } catch (InterruptedException e) {
-        e.printStackTrace();
+        // ignored
       }
     }
 
@@ -769,6 +770,7 @@ public class HLSSampleSource implements SampleSource {
                 audioMediaFormat = h.toMediaFormat();
               } else {
                 // XX: do not hardcode
+                Log.w(TAG, "Audio stream type was not AAC ADTS, assuming mp3");
                 audioMediaFormat = MediaFormat.createAudioFormat(MimeTypes.AUDIO_MPEG, -1, 2, 44100, null);
               }
               ChunkSentinel sentinel = new ChunkSentinel();
@@ -805,7 +807,7 @@ public class HLSSampleSource implements SampleSource {
       try {
         dataSource.close();
       } catch (IOException e) {
-        Log.e(TAG, "Could not close data source", e);
+        Log.w(TAG, "Could not close data source", e);
       }
 
       return null;
