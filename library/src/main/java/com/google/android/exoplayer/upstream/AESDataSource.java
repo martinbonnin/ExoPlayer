@@ -24,7 +24,7 @@ public final class AESDataSource implements DataSource {
   private Cipher cipher;
   private DataSource underlyingDataSource;
   private String userAgent;
-  private byte key[];
+
   private CipherInputStream cipherInputStream;
 
   // XXX: reuse the upstream/cache stuff ?
@@ -65,7 +65,7 @@ public final class AESDataSource implements DataSource {
       } else {
         keyDataSource = new HttpDataSource(userAgent, null);
       }
-
+      byte key[];
       synchronized (keyCache) {
         key = keyCache.get(keyUri.toString());
         if (key == null) {
