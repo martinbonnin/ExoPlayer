@@ -260,14 +260,13 @@ public class HLSSampleSource implements SampleSource {
       mainPlaylist = MainPlaylist.createFakeMainPlaylist(this.url);
     }
 
+    // remove audio-only qualities
     mainPlaylist.removeIncompleteQualities();
 
     maxFrameSize = MediaCodecUtil.maxH264DecodableFrameSize();
 
     Log.d(TAG, "maxFrameSize:" + maxFrameSize);
 
-    // remove audio-only qualities
-    mainPlaylist.removeIncompleteQualities();
     // remove qualities that are too big
     for (Iterator<MainPlaylist.Entry> it = mainPlaylist.entries.iterator(); it.hasNext(); ) {
       MainPlaylist.Entry entry = it.next();
