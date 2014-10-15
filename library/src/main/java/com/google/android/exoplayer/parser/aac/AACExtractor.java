@@ -93,8 +93,12 @@ public class AACExtractor extends Extractor {
       data[0] = (byte)(((audioObjectType & 0x1f) << 3) | ((sampleRateIndex & 0xe) >> 1));
       data[1] = (byte)(((sampleRateIndex & 0x1) << 7) | ((channelConfigIndex & 0xf) << 3));
       initializationData.add(data);
-      // XXX: some codec want a maximum input buffer size. Not sure if 1024 will be enough
-      mediaFormat = MediaFormat.createAudioFormat(MimeTypes.AUDIO_AAC, 1024, 2, getSampleRate(sampleRateIndex), initializationData);
+
+      // XXX: some devices don't decode video if a maximum input buffer is not specified, i.e. when MediaFormat.NO_VALUE is passed.
+      // Seen during testing by Dailymotion on either a Sony or Alcatel device.
+      // Therefore we specify a safe value, the size of an uncompressed AAC frame (1024 samples, 16 bit each).
+      mediaFormat = MediaFormat.createAudioFormat(MimeTypes.AUDIO_AAC, 2048, 2, getSampleRate(sampleRateIndex), initializationData);
+
       //mediaFormat.setIsADTS(true);
       return mediaFormat;
     }
