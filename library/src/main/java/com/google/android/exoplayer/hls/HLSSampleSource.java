@@ -268,11 +268,13 @@ public class HLSSampleSource implements SampleSource {
     Log.d(TAG, "maxFrameSize:" + maxFrameSize);
 
     // remove qualities that are too big
-    for (Iterator<MainPlaylist.Entry> it = mainPlaylist.entries.iterator(); it.hasNext(); ) {
-      MainPlaylist.Entry entry = it.next();
-      if (entry.width > 0  && entry.height > 0 && entry.width * entry.height > maxFrameSize) {
-        Log.d(TAG, "removing quality " + entry.width + "x" + entry.height);
-        it.remove();
+    if (maxFrameSize > 0) {
+      for (Iterator<MainPlaylist.Entry> it = mainPlaylist.entries.iterator(); it.hasNext(); ) {
+        MainPlaylist.Entry entry = it.next();
+        if (entry.width > 0 && entry.height > 0 && entry.width * entry.height > maxFrameSize) {
+          Log.d(TAG, "removing quality " + entry.width + "x" + entry.height);
+          it.remove();
+        }
       }
     }
 
