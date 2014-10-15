@@ -130,7 +130,7 @@ public class HLSSampleSource implements SampleSource {
     public MainPlaylist.Entry readEntry;
   }
 
-  public HLSSampleSource(String url, Handler eventHandler, EventListener listener) {
+  public HLSSampleSource(String url, Handler eventHandler, EventListener listener, String userAgent) {
     this.url = url;
     Runtime rt = Runtime.getRuntime();
     int maxMemoryMB = (int)(rt.maxMemory()/(1024*1024));
@@ -159,7 +159,7 @@ public class HLSSampleSource implements SampleSource {
     list.add(new LinkedList<Object>());
     wrapInfo[Packet.TYPE_AUDIO] = new WrapInfo();
     wrapInfo[Packet.TYPE_VIDEO] = new WrapInfo();
-    userAgent = "HLS Player";
+    this.userAgent = userAgent;
     bufferedPts = new AtomicLong();
     this.eventHandler = eventHandler;
     this.eventListener = listener;
@@ -168,7 +168,7 @@ public class HLSSampleSource implements SampleSource {
   }
 
   public HLSSampleSource(String url) {
-      this(url, null, null);
+      this(url, null, null, "HLS Player");
   }
 
   public void setMaxBufferSize(int maxBufferSize) {
