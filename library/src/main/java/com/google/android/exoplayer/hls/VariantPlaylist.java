@@ -24,8 +24,8 @@ public class VariantPlaylist {
   public String url;
   public int mediaSequence;
   public boolean endList;
-  public double duration;
-  public double targetDuration;
+  public long durationMs;
+  public long targetDurationMs;
   public int type;
 
   static class KeyEntry {
@@ -35,8 +35,8 @@ public class VariantPlaylist {
 
   static class Entry {
     String url;
-    double extinf;
-    double startTime;
+    long durationMs;
+    long startTimeMs;
     public long offset;
     public long length;
 
@@ -59,7 +59,7 @@ public class VariantPlaylist {
     VariantPlaylist variantPlaylist = new VariantPlaylist();
     BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
     variantPlaylist.url = url;
-    double startTime = 0;
+    long startTimeMs = 0;
 
     String line = reader.readLine();
     if (line == null) {
@@ -76,7 +76,7 @@ public class VariantPlaylist {
       } else if (line.startsWith(M3U8Constants.EXT_X_ENDLIST)) {
         variantPlaylist.endList = true;
       } else if (line.startsWith(M3U8Constants.EXT_X_TARGETDURATION + ":")) {
-        variantPlaylist.targetDuration = Double.parseDouble(line.substring(M3U8Constants.EXT_X_TARGETDURATION.length() + 1));
+        variantPlaylist.targetDurationMs = (long) (1000 * Double.parseDouble(line.substring(M3U8Constants.EXT_X_TARGETDURATION.length() + 1)));
       } else if (line.startsWith(M3U8Constants.EXT_X_BYTERANGE + ":")) {
         String parts[] = line.substring(M3U8Constants.EXT_X_BYTERANGE.length() + 1).split("@");
         e.length = Integer.parseInt(parts[0]);
@@ -86,22 +86,22 @@ public class VariantPlaylist {
           e = new Entry();
         }
         String extinfString = line.substring(M3U8Constants.EXTINF.length() + 1).split(",")[0];
-        e.extinf = Double.parseDouble(extinfString);
+        e.durationMs = (long) (1000 * Double.parseDouble(extinfString));
       } else if (e != null && !line.startsWith("#")) {
         e.url = line;
-        if (e.extinf == 0.0) {
-          e.extinf = variantPlaylist.targetDuration;
+        if (e.durationMs == 0) {
+          e.durationMs = variantPlaylist.targetDurationMs;
         }
         e.keyEntry = ke;
-        e.startTime = startTime;
-        startTime += e.extinf;
+        e.startTimeMs = startTimeMs;
+        startTimeMs += e.durationMs;
         variantPlaylist.entries.add(e);
         e = null;
       } else if (line.startsWith(M3U8Constants.EXT_X_KEY + ":")) {
         HashMap<String, String> attributes = M3U8Utils.parseAtrributeList(line.substring(M3U8Constants.EXT_X_KEY.length() + 1));
         String method = attributes.get("METHOD");
         if(!"NONE".equals(method)) {
-            ke = new KeyEntry();
+          ke = new KeyEntry();
             if (method.equals("AES-128")) {
                 ke.uri = attributes.get("URI");
                 if (attributes.containsKey("IV")) {
@@ -121,7 +121,7 @@ public class VariantPlaylist {
     }
 
     for (Entry entry : variantPlaylist.entries) {
-      variantPlaylist.duration += entry.extinf;
+      variantPlaylist.durationMs += entry.durationMs;
     }
     return variantPlaylist;
   }

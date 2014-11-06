@@ -224,7 +224,14 @@ public class MainPlaylist {
     mainPlaylist.firstEntry = mainPlaylist.entries.size() > 0 ? mainPlaylist.entries.get(0) : null;
 
     Collections.sort(mainPlaylist.entries);
+
+    try {
     stream.close();
+    } catch(IOException ex) {
+      // Don't report non-important exception to callers
+      Log.w(TAG, "Could not close network connection", ex);
+    }
+
     return mainPlaylist;
   }
 }

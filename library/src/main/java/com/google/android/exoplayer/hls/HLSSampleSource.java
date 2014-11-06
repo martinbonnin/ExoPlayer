@@ -14,10 +14,12 @@ import com.google.android.exoplayer.ParserException;
 import com.google.android.exoplayer.SampleHolder;
 import com.google.android.exoplayer.SampleSource;
 import com.google.android.exoplayer.TrackInfo;
+import com.google.android.exoplayer.chunk.ChunkSampleSource;
 import com.google.android.exoplayer.parser.aac.AACExtractor;
 import com.google.android.exoplayer.parser.h264.H264Utils;
 import com.google.android.exoplayer.parser.ts.TSExtractorWithParsers;
 import com.google.android.exoplayer.upstream.AESDataSource;
+import com.google.android.exoplayer.upstream.BandwidthMeter;
 import com.google.android.exoplayer.upstream.DataSource;
 import com.google.android.exoplayer.upstream.DataSpec;
 import com.google.android.exoplayer.upstream.DefaultBandwidthMeter;
@@ -29,6 +31,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -44,6 +47,10 @@ import org.apache.http.protocol.HTTP;
  */
 public class HLSSampleSource implements SampleSource {
   private static final String TAG = "HLSSampleSource";
+
+  private static final int TYPE_VIDEO = 0;
+  private static final int TYPE_AUDIO = 1;
+  private static final int TYPE_DEBUG = 3;
 
   private String url;
   private MainPlaylist mainPlaylist;
@@ -69,10 +76,10 @@ public class HLSSampleSource implements SampleSource {
   private AtomicLong bufferedPts;
 
   private int sequence;
-  private int lastKnownSequence;
+  //private int lastKnownSequence;
   private ChunkTask chunkTask;
   private String userAgent;
-  /* Amount we need to substract to get timestamps starting at 0 */
+  /* Amount we need to subtract to get timestamps starting at 0 */
   private long ptsOffset;
   /* used to keep track of wrapping from the thread */
   private WrapInfo wrapInfo[] = new WrapInfo[2];
@@ -86,11 +93,12 @@ public class HLSSampleSource implements SampleSource {
   private int maxBps;
   private int firstRememberedMediaSequence;
   private int fallbackPlaylistType;
+  private List<Long> rememberedChunkStartPositionsMs;
   private ArrayList<Double> rememberedExtinf;
 
   private HashMap<MainPlaylist.Entry, VariantPlaylistSlot> variantPlaylistsMap = new HashMap<MainPlaylist.Entry, VariantPlaylistSlot>();
   private VariantPlaylistTask variantPlaylistTask;
-  private double targetDuration;
+  private long targetDurationMs;
   private long durationUs;
   private boolean isLive;
   private HashMap<Object, Object> allocatorsMap = new HashMap<Object, Object>();
@@ -113,7 +121,7 @@ public class HLSSampleSource implements SampleSource {
     public String name;
   }
 
-  public interface EventListener {
+  public interface EventListener extends ChunkSampleSource.EventListener {
     void onQualitiesParsed(Quality qualities[]);
     void onChunkStart(Quality quality);
   }
@@ -163,12 +171,11 @@ public class HLSSampleSource implements SampleSource {
     bufferedPts = new AtomicLong();
     this.eventHandler = eventHandler;
     this.eventListener = listener;
-    rememberedExtinf = new ArrayList<Double>();
     fallbackPlaylistType = VariantPlaylist.TYPE_UNKNOWN;
   }
 
   public HLSSampleSource(String url) {
-      this(url, null, null, "HLS Player");
+    this(url, null, null, "HLS Player");
   }
 
   public void setMaxBufferSize(int maxBufferSize) {
@@ -235,7 +242,7 @@ public class HLSSampleSource implements SampleSource {
       }
     }
 
-    if(maxBps >= 0 && idealEntry.bps > maxBps) {
+    if (maxBps > 0 && idealEntry.bps > maxBps) {
       idealEntry = getEntryBelowOrEqual(maxBps);
     }
 
@@ -249,13 +256,9 @@ public class HLSSampleSource implements SampleSource {
       return true;
 
     Log.d(TAG, "prepare: " + this.url);
-    try {
-      mainPlaylist = MainPlaylist.parse(this.url);
-    } catch (Exception e) {
-      Log.d(TAG, "Cannot parse main playlist", e);
+    mainPlaylist = MainPlaylist.parse(this.url); // may throw IOException
 
-    }
-    if (mainPlaylist == null || mainPlaylist.entries.size() == 0) {
+    if (mainPlaylist.entries.isEmpty()) {
       Log.d(TAG, String.format("Assuming variant playlist for %s", this.url));
       mainPlaylist = MainPlaylist.createFakeMainPlaylist(this.url);
     }
@@ -278,6 +281,10 @@ public class HLSSampleSource implements SampleSource {
       }
     }
 
+    if (mainPlaylist.entries.isEmpty()) {
+      throw new IOException("None of the stream variants are supported by this device");
+    }
+
     for (MainPlaylist.Entry entry: mainPlaylist.entries) {
       variantPlaylistsMap.put(entry, new VariantPlaylistSlot());
     }
@@ -291,7 +298,7 @@ public class HLSSampleSource implements SampleSource {
     VariantPlaylist variantPlaylist = currentEntry.downloadVariantPlaylist();
     variantPlaylistsMap.get(currentEntry).playlist = variantPlaylist;
 
-    targetDuration = (long)variantPlaylist.entries.get(0).extinf;
+    targetDurationMs = variantPlaylist.entries.get(0).durationMs;
 
     isLive = !variantPlaylist.endList;
     int type = variantPlaylist.type;
@@ -309,19 +316,21 @@ public class HLSSampleSource implements SampleSource {
           /* fallthrough */
         case VariantPlaylist.TYPE_UNKNOWN:
         default:
-          // we are live, start as close as possible from the realtime position
-          firstRememberedMediaSequence = variantPlaylist.mediaSequence + variantPlaylist.entries.size() - 1;
+//          // we are live, start close to the realtime position, but a little behind to be able to build a buffer
+//          int bufferSequenceCount = variantPlaylist.entries.size() > 3 ? variantPlaylist.entries.size() - 3 : 0;
+//          firstRememberedMediaSequence = variantPlaylist.mediaSequence + bufferSequenceCount -1;
+          firstRememberedMediaSequence = variantPlaylist.mediaSequence;
           break;
       }
     } else {
       firstRememberedMediaSequence = variantPlaylist.mediaSequence;
     }
 
-    targetDuration = variantPlaylist.targetDuration;
-    if (targetDuration <= 0) {
-      targetDuration = variantPlaylist.entries.get(0).extinf;
+    targetDurationMs = variantPlaylist.targetDurationMs;
+    if (targetDurationMs <= 0) {
+      targetDurationMs = variantPlaylist.entries.get(0).durationMs;
     }
-    lastKnownSequence = firstRememberedMediaSequence - 1;
+    //lastKnownSequence = firstRememberedMediaSequence - 1;
     rememberVariantPlaylist(variantPlaylist);
 
     sequence = firstRememberedMediaSequence;
@@ -442,10 +451,15 @@ public class HLSSampleSource implements SampleSource {
       return;
     }
 
-    estimatedBps = (int)bandwidthMeter.getEstimate() * 8;
+    final long bandwidthMeterEstimate = bandwidthMeter.getEstimate();
+    if (bandwidthMeterEstimate != BandwidthMeter.NO_ESTIMATE) {
+      estimatedBps = (int) bandwidthMeterEstimate * 8; // HLS playlist is using _bits_ per second
+    } else {
+      estimatedBps = (int) BandwidthMeter.NO_ESTIMATE;
+    }
     bufferMsec = (int)((getBufferedPositionUs() - playbackPositionUs)/1000);
 
-    if (estimatedBps < 0 && mainPlaylist.firstEntry != null) {
+    if (estimatedBps == BandwidthMeter.NO_ESTIMATE) {
       currentEntry = mainPlaylist.firstEntry;
     } else {
       currentEntry = evaluateNextEntry();
@@ -471,8 +485,8 @@ public class HLSSampleSource implements SampleSource {
         newSequence = variantPlaylist.mediaSequence;
       }
       Log.d(TAG, String.format("we are behind, skip sequence %d -> %d (%d - %d)",
-              sequence, newSequence, variantPlaylist.mediaSequence,
-              variantPlaylist.mediaSequence + variantPlaylist.entries.size() - 1));
+          sequence, newSequence, variantPlaylist.mediaSequence,
+          variantPlaylist.mediaSequence + variantPlaylist.entries.size() - 1));
       sequence = newSequence;
     }
 
@@ -491,15 +505,41 @@ public class HLSSampleSource implements SampleSource {
     chunk.mainEntry = currentEntry;
     chunk.variantPlaylist = variantPlaylist;
     chunk.videoMediaFormat = MediaFormat.createVideoFormat(MimeTypes.VIDEO_H264, MediaFormat.NO_VALUE,
-                    currentEntry.width, currentEntry.height, null);
+        currentEntry.width, currentEntry.height, null);
     chunkTask = new ChunkTask(chunk);
     chunkTask.execute();
   }
 
+  private void notifyUpstreamError(final IOException e) {
+    if (eventHandler != null && eventListener != null) {
+      eventHandler.post(new Runnable() {
+        @Override
+        public void run() {
+          eventListener.onUpstreamError(TYPE_VIDEO, e);
+        }
+      });
+    }
+  }
+
+  private void notifyConsumptionError(final IOException e) {
+    if (eventHandler != null && eventListener != null) {
+      eventHandler.post(new Runnable() {
+        @Override
+        public void run() {
+          eventListener.onConsumptionError(TYPE_VIDEO, e);
+        }
+      });
+    }
+  }
+
+  /*
+   * Internal Conax debugging method
+   */
+
   private void kickVariantPlaylistTask() {
     VariantPlaylistSlot slot = variantPlaylistsMap.get(currentEntry);
     long now = SystemClock.uptimeMillis();
-    if (variantPlaylistTask == null && (now - slot.lastUptime > 1000 * targetDuration / 2)) {
+    if (variantPlaylistTask == null && (now - slot.lastUptime > targetDurationMs / 2)) {
       variantPlaylistTask = new VariantPlaylistTask(currentEntry);
       variantPlaylistTask.execute();
       slot.lastUptime = now;
@@ -573,7 +613,6 @@ public class HLSSampleSource implements SampleSource {
   }
   @Override
   public long seekToUs(long timeUs) {
-    long seekTimeUs = 0;
     if (chunkTask != null) {
       chunkTask.abort();
     }
@@ -589,31 +628,44 @@ public class HLSSampleSource implements SampleSource {
       }
     }
 
-    long acc = 0;
+    int timeMs = (int) (timeUs / 1000);
+    int matchingChunkOffset = findMatchingChunkOffset(timeMs);
+    int matchingSequence = firstRememberedMediaSequence + matchingChunkOffset;
+    long seekTimeMs = rememberedChunkStartPositionsMs.get(matchingChunkOffset);
 
-    sequence = firstRememberedMediaSequence;
-    for (Double extinf : rememberedExtinf) {
-      acc += (long)(extinf * 1000000);
-      if (acc > timeUs) {
-        break;
-      }
-      seekTimeUs += (long)(extinf * 1000000);
-      sequence++;
-    }
+    Log.d(TAG, "seekTo " + timeMs +
+      " => new media sequence = " + matchingSequence + " previous media sequence = " + sequence);
 
-    Log.d(TAG, "seekTo " + timeUs/1000 + " => " + sequence + " firstRememberedMediaSequence=" + firstRememberedMediaSequence);
+    sequence = matchingSequence;
 
     for (HLSTrack t : trackList) {
       t.discontinuity = true;
     }
 
     endOfStream = false;
-    return seekTimeUs;
+    return seekTimeMs * 1000L;
   }
 
   @Override
   public long getBufferedPositionUs() {
     return (bufferedPts.get() - ptsOffset) * 1000 / 45;
+  }
+
+  /**
+   * Finds the index of the first chunk in the playlist that has a start time of no more than positionMs
+   * @param positionMs
+   */
+  private int findMatchingChunkOffset(final long positionMs) {
+    int matchingChunkIndex;
+    int insertPosition = Collections.binarySearch(rememberedChunkStartPositionsMs, positionMs);
+    if (insertPosition < -1) {
+      insertPosition = -insertPosition - 1; // position of first element that is larger
+      matchingChunkIndex = insertPosition - 1; // position of first element that is not larger
+    } else {
+      matchingChunkIndex = insertPosition; // positionMs matches an element exactly
+    }
+
+    return matchingChunkIndex;
   }
 
   @Override
@@ -627,26 +679,21 @@ public class HLSSampleSource implements SampleSource {
   }
 
   private void rememberVariantPlaylist(VariantPlaylist variantPlaylist) {
-    Log.d(TAG, "remember variantPlaylist (" + variantPlaylist.mediaSequence + " - " + (variantPlaylist.mediaSequence
-            + variantPlaylist.entries.size() - 1) + ") lastKnownSequence=" + lastKnownSequence);
-    if (variantPlaylist.mediaSequence > lastKnownSequence + 1) {
-      Log.e(TAG, "we missed some sequence numbers " + lastKnownSequence + " -> " + variantPlaylist.mediaSequence);
-      // try to guess the durations of the missing chunks
-      for (int i = lastKnownSequence + 1; i < variantPlaylist.mediaSequence; i++) {
-        rememberedExtinf.add(targetDuration);
-        durationUs += (long)targetDuration * 1000000;
-        lastKnownSequence++;
-      }
-    }
+    durationUs = 0;
+    rememberedChunkStartPositionsMs = new ArrayList<Long>(variantPlaylist.entries.size() + 1);
 
-    for (int i = lastKnownSequence + 1 - variantPlaylist.mediaSequence; i < variantPlaylist.entries.size(); i++) {
-      double extinf = variantPlaylist.entries.get(i).extinf;
-      rememberedExtinf.add(extinf);
-      durationUs += (long)extinf * 1000000;
-      lastKnownSequence++;
+    rememberedChunkStartPositionsMs.add(0L); // first chunk starts at position 0
+    for (VariantPlaylist.Entry entry : variantPlaylist.entries) {
+      long chunkDurationMs = entry.durationMs;
+      long previousChunkPosition = rememberedChunkStartPositionsMs.get(rememberedChunkStartPositionsMs.size() - 1);
+      rememberedChunkStartPositionsMs.add(previousChunkPosition + chunkDurationMs);
     }
+    // Note: the last element in rememberedChunkStartPositionsMs represents the starting position of
+    // the first chunk outside of the playlist, and is the sum of all previous chunk durations.
+    long sumOfChunkDurations = rememberedChunkStartPositionsMs.get(rememberedChunkStartPositionsMs.size() - 1);
+    durationUs = sumOfChunkDurations * 1000L;
 
-    for (HLSTrack hlsTrack: trackList) {
+      for (HLSTrack hlsTrack: trackList) {
       hlsTrack.trackInfo.durationUs = durationUs;
     }
   }
@@ -686,6 +733,7 @@ public class HLSSampleSource implements SampleSource {
           keyUrl = URLEncoder.encode(variantEntry.keyEntry.uri, HTTP.UTF_8);
         } catch (UnsupportedEncodingException e) {
           Log.wtf(TAG, HTTP.UTF_8 + " charset not available");
+          notifyConsumptionError(e);
           exception = e;
           return null;
         }
@@ -707,6 +755,7 @@ public class HLSSampleSource implements SampleSource {
         dataSource.open(dataSpec);
       } catch (IOException e) {
         Log.e(TAG, "Error reading encrypted data source", e);
+        notifyUpstreamError(e);
         exception = e;
         return null;
       }
@@ -724,6 +773,7 @@ public class HLSSampleSource implements SampleSource {
           extractor = new TSExtractorWithParsers(dataSource, allocatorsMap);
         } catch (ParserException e) {
           Log.e(TAG, "Error parsing TS", e);
+          notifyConsumptionError(e);
           exception = e;
           return null;
         }
@@ -735,6 +785,7 @@ public class HLSSampleSource implements SampleSource {
           sample = extractor.read();
         } catch (ParserException e) {
           Log.e(TAG, "Extractor read error", e);
+          notifyConsumptionError(e);
           exception = e;
           break;
         }
@@ -780,12 +831,12 @@ public class HLSSampleSource implements SampleSource {
               list.get(sample.type).add(sentinel);
             } else if (videoMediaFormat == null && sample.type == Packet.TYPE_VIDEO) {
               ChunkSentinel sentinel = new ChunkSentinel();
-              
+
               SPS sps = new SPS();
               List<byte[]> csd = new ArrayList<byte []>();
               if (H264Utils.extractSPS_PPS(sample.data, sps, csd)) {
                 sentinel.mediaFormat = MediaFormat.createVideoFormat(MimeTypes.VIDEO_H264, MediaFormat.NO_VALUE,
-                        sps.width, sps.height, csd);
+                    sps.width, sps.height, csd);
               } else {
                 sentinel.mediaFormat = chunk.videoMediaFormat;
               }
@@ -844,7 +895,11 @@ public class HLSSampleSource implements SampleSource {
     protected Void doInBackground(Void... params) {
       try {
         this.variantPlaylist = mainEntry.downloadVariantPlaylist();
-      } catch (Exception e) {
+      } catch (ParserException e) {
+        notifyConsumptionError(e);
+        this.exception = e;
+      } catch (IOException e) {
+        notifyUpstreamError(e);
         this.exception = e;
       }
 
