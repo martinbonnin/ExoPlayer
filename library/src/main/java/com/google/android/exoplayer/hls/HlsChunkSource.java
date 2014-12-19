@@ -196,7 +196,7 @@ public class HlsChunkSource {
     bufferPool = new BufferPool(256 * 1024);
 
     if (playlist.type == HlsPlaylist.TYPE_MEDIA) {
-      variants = Collections.singletonList(new Variant(playlistUrl, 0, null, -1, -1));
+      variants = Collections.singletonList(new Variant(playlistUrl, 0, null, -1, -1, null));
       variantIndices = null;
       mediaPlaylists = new HlsMediaPlaylist[1];
       mediaPlaylistBlacklistTimesMs = new long[1];

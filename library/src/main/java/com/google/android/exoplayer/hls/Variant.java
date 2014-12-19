@@ -25,13 +25,14 @@ public final class Variant {
   public final String codecs;
   public final int width;
   public final int height;
+  public final String name;
 
-  public Variant(String url, int bitrate, String codecs, int width, int height) {
+  public Variant(String url, int bitrate, String codecs, int width, int height, String name) {
     this.bitrate = bitrate;
     this.url = url;
     this.codecs = codecs;
     this.width = width;
     this.height = height;
+    this.name = name;
   }
-
 }
