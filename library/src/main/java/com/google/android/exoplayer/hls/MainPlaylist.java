@@ -152,9 +152,14 @@ public class MainPlaylist {
         }
     }
 
-    public static MainPlaylist createFakeMainPlaylist(String url) {
+    /**
+     * Creates a MainPlaylist with <em>streamVariantUrl</em> as a variant stream entry
+     * @param streamVariantUrl -
+     * @return -
+     */
+    public static MainPlaylist createFakeMainPlaylist(String streamVariantUrl) {
     MainPlaylist mainPlaylist = new MainPlaylist();
-    Entry e = new Entry(null, url);
+    Entry e = new Entry(null, streamVariantUrl);
     e.bps = 424242;
     /*e.codecs.add("mp4a");
     if (!audioOnly) {
@@ -219,7 +224,14 @@ public class MainPlaylist {
     mainPlaylist.firstEntry = mainPlaylist.entries.size() > 0 ? mainPlaylist.entries.get(0) : null;
 
     Collections.sort(mainPlaylist.entries);
+
+    try {
     stream.close();
+    } catch(IOException ex) {
+      // Don't report non-important exception to callers
+      Log.w(TAG, "Could not close network connection", ex);
+    }
+
     return mainPlaylist;
   }
 }

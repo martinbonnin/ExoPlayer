@@ -259,13 +259,6 @@ public class HttpDataSource implements DataSource {
 
     long contentLength = getContentLength(connection);
     dataLength = dataSpec.length == DataSpec.LENGTH_UNBOUNDED ? contentLength : dataSpec.length;
-    if (dataLength == DataSpec.LENGTH_UNBOUNDED) {
-      // The DataSpec specified unbounded length and we failed to resolve a length from the
-      // response headers.
-      //throw new HttpDataSourceException(
-      //    new UnexpectedLengthException(DataSpec.LENGTH_UNBOUNDED, DataSpec.LENGTH_UNBOUNDED),
-      //    dataSpec);
-    }
 
     if (dataSpec.length != DataSpec.LENGTH_UNBOUNDED && contentLength != DataSpec.LENGTH_UNBOUNDED
         && contentLength != dataSpec.length) {
