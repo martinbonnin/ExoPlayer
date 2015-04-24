@@ -163,7 +163,7 @@ public final class HlsPlaylistParser implements NetworkLoadable.Parser<HlsPlayli
           // TODO: Support other types of media tag.
         }
       } else if (line.startsWith(STREAM_INF_TAG)) {
-        name = HlsParserUtil.parseStringAttr(line, NAME_ATTR_REGEX, NAME_ATTR);
+        name = HlsParserUtil.parseOptionalStringAttr(line, NAME_ATTR_REGEX);
         bitrate = HlsParserUtil.parseIntAttr(line, BANDWIDTH_ATTR_REGEX, BANDWIDTH_ATTR);
         codecs = HlsParserUtil.parseOptionalStringAttr(line, CODECS_ATTR_REGEX);
         String resolutionString = HlsParserUtil.parseOptionalStringAttr(line,
