@@ -160,7 +160,7 @@ import java.util.Collections;
     adtsScratch.setPosition(0);
 
     if (!hasOutputFormat) {
-      int audioObjectType = adtsScratch.readBits(2) + 1;
+      int audioObjectType = 2;//adtsScratch.readBits(2) + 1;
       int sampleRateIndex = adtsScratch.readBits(4);
       adtsScratch.skipBits(1);
       int channelConfig = adtsScratch.readBits(3);
