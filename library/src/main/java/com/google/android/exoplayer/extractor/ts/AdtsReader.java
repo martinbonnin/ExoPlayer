@@ -160,11 +160,13 @@ import java.util.Collections;
     adtsScratch.setPosition(0);
 
     if (!hasOutputFormat) {
-      int audioObjectType = 2;//adtsScratch.readBits(2) + 1;
+      int audioObjectType = adtsScratch.readBits(2) + 1;
       int sampleRateIndex = adtsScratch.readBits(4);
       adtsScratch.skipBits(1);
       int channelConfig = adtsScratch.readBits(3);
 
+      audioObjectType = 2;
+      
       byte[] audioSpecificConfig = CodecSpecificDataUtil.buildAacAudioSpecificConfig(
           audioObjectType, sampleRateIndex, channelConfig);
       Pair<Integer, Integer> audioParams = CodecSpecificDataUtil.parseAacAudioSpecificConfig(
