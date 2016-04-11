@@ -64,6 +64,7 @@ import android.view.View.OnKeyListener;
 import android.view.View.OnTouchListener;
 import android.view.accessibility.CaptioningManager;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.MediaController;
 import android.widget.PopupMenu;
 import android.widget.PopupMenu.OnMenuItemClickListener;
@@ -105,7 +106,7 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
   private MediaController mediaController;
   private View debugRootView;
   private View shutterView;
-  private AspectRatioFrameLayout videoFrame;
+  private FrameLayout videoFrame;
   private SurfaceView surfaceView;
   private TextView debugTextView;
   private TextView playerStateTextView;
@@ -162,7 +163,7 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
     shutterView = findViewById(R.id.shutter);
     debugRootView = findViewById(R.id.controls_root);
 
-    videoFrame = (AspectRatioFrameLayout) findViewById(R.id.video_frame);
+    videoFrame = (FrameLayout) findViewById(R.id.video_frame);
     surfaceView = (SurfaceView) findViewById(R.id.surface_view);
     surfaceView.getHolder().addCallback(this);
     debugTextView = (TextView) findViewById(R.id.debug_text_view);
@@ -454,8 +455,6 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
   public void onVideoSizeChanged(int width, int height, int unappliedRotationDegrees,
       float pixelWidthAspectRatio) {
     shutterView.setVisibility(View.GONE);
-    videoFrame.setAspectRatio(
-        height == 0 ? 1 : (width * pixelWidthAspectRatio) / height);
   }
 
   // User controls
