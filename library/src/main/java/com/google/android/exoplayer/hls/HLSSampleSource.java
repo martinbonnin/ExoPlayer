@@ -530,6 +530,10 @@ public class HLSSampleSource implements SampleSource {
             return NOTHING_READ;
           }
         } else {
+          if (sampleHolder.data == null) {
+            return NOTHING_READ;
+          }
+
           Packet sample = (Packet)o;
           sample.data.limit(sample.data.position());
           if (sample.type == Packet.TYPE_AUDIO) {
